@@ -4,10 +4,7 @@ from collections import namedtuple
 from obj import  Obj
 from utils.gl_color import color, decimalToRgb
 from utils.gl_encode import char, word, dword
-
-V2 = namedtuple('Point2', ['x', 'y'])
-V3 = namedtuple('Point3', ['x', 'y', 'z'])
-V4 = namedtuple('Point4', ['x', 'y', 'z','w'])
+from utils.gl_math import cross, dot, substract, norm, V2, V3
 
 BLACK = color(0,0,0)
 WHITE = color(1,1,1)
@@ -126,7 +123,50 @@ class Render(object):
 
         archivo.close()
 
+    def glZBuffer(self, filename):
+        archivo = open(filename, 'wb')
 
+        # File header 14 bytes
+        archivo.write(bytes('B'.encode('ascii')))
+        archivo.write(bytes('M'.encode('ascii')))
+        archivo.write(dword(14 + 40 + self.width * self.height * 3))
+        archivo.write(dword(0))
+        archivo.write(dword(14 + 40))
+
+        # Image Header 40 bytes
+        archivo.write(dword(40))
+        archivo.write(dword(self.width))
+        archivo.write(dword(self.height))
+        archivo.write(word(1))
+        archivo.write(word(24))
+        archivo.write(dword(0))
+        archivo.write(dword(self.width * self.height * 3))
+        archivo.write(dword(0))
+        archivo.write(dword(0))
+        archivo.write(dword(0))
+        archivo.write(dword(0))
+
+        # Minimo y el maximo
+        minZ = float('inf')
+        maxZ = -float('inf')
+        for x in range(self.height):
+            for y in range(self.width):
+                if self.zbuffer[x][y] != -float('inf'):
+                    if self.zbuffer[x][y] < minZ:
+                        minZ = self.zbuffer[x][y]
+
+                    if self.zbuffer[x][y] > maxZ:
+                        maxZ = self.zbuffer[x][y]
+
+        for x in range(self.height):
+            for y in range(self.width):
+                depth = self.zbuffer[x][y]
+                if depth == -float('inf'):
+                    depth = minZ
+                depth = (depth - minZ) / (maxZ - minZ)
+                archivo.write(color(depth,depth,depth))
+
+        archivo.close()
     def glLine(self, v0, v1, color = None) :
         x0 = self.glFixCoordinate(v0.x, True)
         x1 = self.glFixCoordinate(v1.x, True)
@@ -279,15 +319,18 @@ class Render(object):
                 v0 = self.transform(v0,translate, scale)
                 v1 = self.transform(v1,translate, scale)
                 v2 = self.transform(v2,translate, scale)
+                    
+                
+                normal = cross(substract(v1,v0), substract(v2,v0))
 
-                normal = np.cross(np.subtract(v1,v0), np.subtract(v2,v0))
-                normal = normal / np.linalg.norm(normal)
-                intensity = np.dot(normal, light)
+ 
+                intensity = dot(norm(normal), norm(light))
 
                 if intensity >=0:
                     self.triangle_bc(v0,v1,v2, color(intensity, intensity, intensity))
 
-                if vertCount > 3: #asumamos que 4, un cuadrado
+                # Manage square rendering
+                if vertCount > 3:
                     v3 = model.vertices[ face[3][0] - 1 ]
                     v3 = self.transform(v3,translate, scale)
                     if intensity >=0:
